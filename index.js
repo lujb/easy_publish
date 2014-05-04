@@ -33,7 +33,7 @@ function publish(config, cb) {
 	conf.tarball = path.join(base_folder, 'package.tgz');
 
 	// pack specified app folder
-	pack(config.folder, conf.tarball, function (err) {
+	pack(config.folder, conf.tarball, config.filter, function (err) {
 		if (err) {
 			log.error("pack", "failed to pack:" + conf.tarball);
 			cb(err);
@@ -97,8 +97,14 @@ function login(registry, cb) {
 		})
 }
 
-function pack (folder, tarball, cb) {
-	new Packer({ path: folder, type: "Directory", Directory: true })
+function pack (folder, tarball, filter, cb) {
+	var config = { path: folder, type: "Directory", Directory: true };
+
+	if (typeof filter === 'function') {
+		config.filter = filter;
+	}
+
+	new Packer(config)
 	  // .on("package", function (p) {
 	  // })
 		.on("error", function (err) {
