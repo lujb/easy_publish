@@ -1,76 +1,130 @@
-var RegClient = require('npm-registry-client');
+var fs = require('fs');
 var sha = require('sha');
+var tar = require('tar');
+var zlib = require('zlib');
+var path = require('path');
+var log = require('npmlog');
+var fstream = require('fstream');
+var Packer = require('fstream-npm');
+var RegClient = require('npm-registry-client');
 
 
-var conf = {};
-conf.tarball = '.npm/mytest/0.0.2/package.tgz';
-conf.username = 'lu.jingbo';
-conf.password = '******';
-conf.email = 'lujingboo@gmail.com';
-conf.registry = 'http://npm.rytjs.org:5288/';
+function publish(config, cb) {
+	var conf = config;
 
+	if (!cb) {
+		cb = function (err) {
+			if (err) console.log(err);
+		}
+	}
 
-var shasum = sha.get(conf.tarball, function(err, shasum){
-    if (err){
-        throw(err)
-    } else{
-        return shasum
-    }
-});
+	// get package.json
+	var app = require(path.join(config.folder, 'package.json'));
+	var id = app.name + '@' + app.version;
+	conf.data = app;
+	conf.data.id = id;
+	conf.data.dist = {};
+	conf.data._npmUser = {
+			name:conf.username,
+			email:conf.email
+	};
 
-conf.data = {
-    name: 'mytest',
-    version: '0.0.2',
-    description: '',
-    main: 'index.js',
-    scripts: { test: 'echo "Error: no test specified" && exit 1' },
-    author: '',
-    license: 'ISC',
-    readme: 'ERROR: No README data found!',
-    _id: 'mytest@0.0.2',
-    dist: { shasum: shasum },
-    //_from: '.',
-    //_npmVersion: '1.3.21',
-    _npmUser: { name: conf.username, email: conf.email }
-};
+	var base_folder = path.dirname(config.folder);
+	conf.tarball = path.join(base_folder, 'package.tgz');
 
+	// pack specified app folder
+	pack(config.folder, conf.tarball, function (err) {
+		if (err) {
+			log.error("pack", "failed to pack:" + conf.tarball);
+			cb(err);
+		} else {
+			// get shasum
+			conf.data.dist.shasum = sha.getSync(conf.tarball, function(err, shasum) {
+				if (err) {
+					log.error("sha", "sha error " + conf.tarball);
+					cb(err);
+				} else {
+					return shasum
+				}
+			});
 
-publish(conf);
+			conf.cache = 'blahblah'; //requied
+			conf.get = function(k) { return conf[k] };
+			conf.set = function(k,v) { conf[k] = v };
+			conf.del = function(k) { delete conf[k] };
 
+			registry = new RegClient(conf);
 
-function publish(data) {
-    var conf = data;
-    conf.cache = 'blahblah';
-    conf.get = function(k){return conf[k]};
-    conf.set = function(k,v){conf[k]=v};
-    conf.del = function(k){delete conf[k]};
-    registry = new RegClient(conf);
-    login(registry, function(err, auth) {
-        if (err) {
-            console.log('login:', err);
-            return false;
-        } else {
-            registry.publish(conf.data, conf.tarball, function(err){
-                if (err) {
-                    console.log('publish:', err);
-                    return false;
-                } else {
-                    return true;
-                }
-            });
-        }
-    });
+			// try to login registry
+			login(registry, function(err, auth) {
+				if (err) {
+					log.error('login error ', registry);
+					cb(err);
+				} else {
+					// try to publish package
+					registry.publish(conf.data, conf.tarball, function(err) {
+						if (err) {
+							log.error('publish error', conf.data);
+							cb(err);
+						} else {
+						// ok, cleanup
+							fs.unlink(conf.tarball, function (err) {
+								if (err) {
+									log.error('clean error ', conf.tarball);
+									cb(err);
+								} else {
+									cb();
+								}
+							}); //end unlink
+						}
+					}); //end publish
+				}
+			}); //end login
+		}
+	}); //end pack
 }
 
 function login(registry, cb) {
-    var username = registry.conf.username;
-    var password = registry.conf.password;
-    var email = registry.conf.email;
-    registry.adduser(username, password, email, function(err) {
-        if (err) {
-            if (cb) cb(err);
-        } else {
-            if (cb) cb(err, registry.conf._auth);
-        }
-    })
+		var username = registry.conf.username;
+		var password = registry.conf.password;
+		var email = registry.conf.email;
+		registry.adduser(username, password, email, function(err) {
+				if (err) {
+						if (cb) cb(err);
+				} else {
+						if (cb) cb(err, registry.conf._auth);
+				}
+		})
 }
+
+function pack (folder, tarball, cb) {
+	new Packer({ path: folder, type: "Directory", Directory: true })
+	  // .on("package", function (p) {
+	  // })
+		.on("error", function (err) {
+			if (err) log.error("tar pack", "Error reading " + folder)
+			return cb(err)
+		})
+
+		.pipe(tar.Pack())
+		.on("error", function (err) {
+			if (err) log.error("tar.pack", "tar creation error", tarball)
+			cb(err)
+		})
+		.pipe(zlib.Gzip())
+		.on("error", function (err) {
+			if (err) log.error("tar.pack", "gzip error "+tarball)
+			cb(err)
+		})
+		.pipe(fstream.Writer({ type: "File", path: tarball }))
+		.on("error", function (err) {
+			if (err) log.error("tar.pack", "Could not write "+tarball)
+			cb(err)
+		})
+		.on("close", cb);
+	return true;
+}
+
+
+// expose
+module.exports.publish = publish;
