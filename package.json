@@ -23,6 +23,10 @@
   "homepage": "https://github.com/lujb/easy_publish",
   "dependencies": {
     "sha": "~1.2.3",
-    "npm-registry-client": "~0.4.7"
+    "npm-registry-client": "~0.4.7",
+    "tar": "~0.1.19",
+    "fstream-npm": "~0.1.6",
+    "fstream": "~0.1.25",
+    "npmlog": "0.0.6"
   }
 }
