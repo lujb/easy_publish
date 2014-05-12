@@ -47,8 +47,14 @@ function publish(config, _cb) {
 	var base_folder = path.dirname(config.folder);
 	conf.tarball = path.join(base_folder, 'package.tgz');
 
+	// get filter by filter-generator
+	var filter;
+	if (config.filterGenerator) {
+		filter = config.filterGenerator(config.folder);
+	}
+
 	// pack specified app folder
-	pack(config.folder, conf.tarball, config.filter(config.folder), function (err) {
+	pack(config.folder, conf.tarball, filter, function (err) {
 		if (err) {
 			log.error("pack", "failed to pack:" + conf.tarball);
 			cb(err);
@@ -119,7 +125,6 @@ function login(registry, cb) {
 }
 
 function pack (folder, tarball, filter, cb) {
-	console.log('filter', filter);
 	var config = { path: folder, type: "Directory", Directory: true };
 
 	if (typeof filter === 'function') {
