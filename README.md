@@ -1,7 +1,7 @@
 easy_publish
 ============
 
-publish package to registry with one call.
+publish npm package to registry without using npm client.
 
 ## example ##
 ```js
