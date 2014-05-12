@@ -9,17 +9,32 @@ var Packer = require('fstream-npm');
 var RegClient = require('npm-registry-client');
 
 
-function publish(config, cb) {
+function publish(config, _cb) {
 	var conf = config;
 
-	if (!cb) {
-		cb = function (err) {
+	if (!_cb) {
+		_cb = function (err) {
 			if (err) console.log(err);
 		}
 	}
 
+	// wrap cleanup function
+	var cb = function(err) {
+		clean(config.tarball);
+		_cb(err);
+	}
+
 	// get package.json
-	var app = require(path.join(config.folder, 'package.json'));
+	var app;
+	var package_json = path.join(config.folder, 'package.json');
+	if (config.app && config.app.name && config.app.version) {
+		app = config.app;
+		fs.writeFileSync(package_json, JSON.stringify(app), 'utf8');
+	} else {
+		if (!fs.existsSync(package_json))
+			return cb(new Error('package.json not provided'));
+		app = require(package_json);
+	}
 	var id = app.name + '@' + app.version;
 	conf.data = app;
 	conf.data.id = id;
@@ -33,7 +48,7 @@ function publish(config, cb) {
 	conf.tarball = path.join(base_folder, 'package.tgz');
 
 	// pack specified app folder
-	pack(config.folder, conf.tarball, config.filter, function (err) {
+	pack(config.folder, conf.tarball, config.filter(config.folder), function (err) {
 		if (err) {
 			log.error("pack", "failed to pack:" + conf.tarball);
 			cb(err);
@@ -64,24 +79,30 @@ function publish(config, cb) {
 					// try to publish package
 					registry.publish(conf.data, conf.tarball, function(err) {
 						if (err) {
-							log.error('publish error', conf.data);
+							// log.error('publish error', conf.data);
 							cb(err);
 						} else {
+							cb();
 						// ok, cleanup
-							fs.unlink(conf.tarball, function (err) {
-								if (err) {
-									log.error('clean error ', conf.tarball);
-									cb(err);
-								} else {
-									cb();
-								}
-							}); //end unlink
+						// 	fs.unlink(conf.tarball, function (err) {
+						// 		if (err) {
+						// 			log.error('clean error ', conf.tarball);
+						// 			cb(err);
+						// 		} else {
+						// 			cb();
+						// 		}
+						// 	}); //end unlink
 						}
 					}); //end publish
 				}
 			}); //end login
 		}
 	}); //end pack
+
+	function clean(f) {
+		var existed = f && fs.existsSync(f);
+		if (existed) fs.unlinkSync(f);
+	}
 }
 
 function login(registry, cb) {
@@ -98,6 +119,7 @@ function login(registry, cb) {
 }
 
 function pack (folder, tarball, filter, cb) {
+	console.log('filter', filter);
 	var config = { path: folder, type: "Directory", Directory: true };
 
 	if (typeof filter === 'function') {
